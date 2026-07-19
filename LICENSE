@@ -19,3 +19,18 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+--------------------------------------------------------------------------------
+
+Third-party attribution
+
+This project is an independent, unofficial reimplementation of the OWO game SDK
+UDP wire protocol. It contains no OWO source code; its behavior was derived from
+the official OWO SDK, which is distributed under the MIT License:
+
+    OWO SDK (NuGet package "OWO", version 2.4.2)
+    Copyright (c) OWO
+    MIT License: https://licenses.nuget.org/MIT
+
+"OWO", the OWO suit, and the OWO SDK are the property of their respective owners.
+This project is not affiliated with, endorsed by, or sponsored by OWO.
