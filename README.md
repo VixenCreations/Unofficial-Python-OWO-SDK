@@ -2,7 +2,7 @@
 
 > **AI assistance notice:** this SDK was developed with the assistance of
 > **Claude Code (Opus 4.8)**. The protocol reimplementation, documentation, and test
-> tooling were produced with AI pair-programming, then verified byte-for-byte against
+> tooling were produced with AI Assisted Programming (Digital Cowork), then verified byte-for-byte against
 > the wire format and tested on real OWO hardware.
 
 A small, dependency-free Python library for driving an [OWO](https://owogame.com)
@@ -87,6 +87,7 @@ py -3.11 test_rig.py --dry          # print the exact wire strings, no hardware
 py -3.11 test_rig.py --visualizer   # fire into the OWO Visualizer (no suit)
 py -3.11 test_rig.py                # connect to the OWO app and fire on the suit
 ```
+<img width="1797" height="902" alt="example" src="https://github.com/user-attachments/assets/643720be-98ad-4a6f-875f-ddab9ce14ad5" />
 
 Sample patterns live in `samples/`.
 
