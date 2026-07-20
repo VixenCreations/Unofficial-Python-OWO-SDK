@@ -1,5 +1,10 @@
 # Unofficial Python OWO SDK
 
+> **AI assistance notice:** this SDK was developed with the assistance of
+> **Claude Code (Opus 4.8)**. The protocol reimplementation, documentation, and test
+> tooling were produced with AI pair-programming, then verified byte-for-byte against
+> the wire format and tested on real OWO hardware.
+
 A small, dependency-free Python library for driving an [OWO](https://owogame.com)
 haptic suit. It talks to the OWO desktop app directly over UDP using only the
 standard library, so there is no `pythonnet`, no `OWO.dll`, and no .NET runtime to
