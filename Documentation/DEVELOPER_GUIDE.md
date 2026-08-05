@@ -37,30 +37,48 @@ client.close()                     # stops threads, closes the socket
 
 ### Threading model
 
-`open()` starts a receive thread and a scan/keepalive thread; both are daemons. All
-public methods are safe to call from your own thread. Your `send`/`sustain` calls
-hand work to those threads or send immediately from the caller. Do not share one
-`OWOClient` socket across processes.
+`open()` starts the receive thread. `auto_connect()` / `connect()` start the scan
+thread. Both are daemons, and each will restart the other if it ever stops, so a
+one-off socket error cannot leave the client permanently deaf. All public methods are
+safe to call from your own thread. Your `send`/`sustain` calls hand work to those
+threads or send immediately from the caller. Do not share one `OWOClient` socket
+across processes.
 
-### Keepalive and reconnect
+### Disconnects and reconnect
 
-While connected, the scan thread pings each connected server every `scan_interval`
-(default 0.5s) and drops any server that has not answered within `keepalive_timeout`
-(default 3.0s), then resumes discovery. This catches silent drops (sleep/wake, cable
-pull) that never send an explicit close. Clean shutdowns from the app arrive as
-`OWO_Close` and are handled the same way.
+While it is looking for an app, the scan thread pings every `scan_interval` (default
+0.5s). Once connected it stops pinging and just listens, which is what the official
+client does. The app tells you it is going away with `OWO_Close`, and that is the
+signal to act on: the client clears the server and, with `auto_reconnect`, starts
+looking again.
 
 Tuning (constructor args):
 
 | Arg | Default | Effect |
 |---|---|---|
-| `scan_interval` | `0.5` | ping cadence for discovery and keepalive |
-| `keepalive` | `True` | set `False` to disable the liveness check |
-| `keepalive_timeout` | `3.0` | seconds of silence before a server is dropped |
+| `scan_interval` | `0.5` | ping cadence while discovering |
 | `auto_reconnect` | `True` | re-discover automatically after a drop |
+| `keepalive` | `False` | opt-in liveness check, see the warning below |
+| `keepalive_timeout` | `3.0` | seconds of silence before a server is dropped |
 
 `auto_reconnect=True` means a dropped connection quietly comes back on its own; your
 `send` calls are no-ops while disconnected and resume when the link returns.
+
+**Leave `keepalive` off unless you know you need it.** It pings connected servers and
+drops any that go quiet, which sounds useful and mostly is not: the app stops
+answering discovery pings while a sensation is playing, so the check fires a few
+seconds after every send, tears down a perfectly good connection, and then every
+later send silently does nothing because the client thinks it is disconnected. The
+only thing it buys you is noticing an app that dies without sending `OWO_Close`, and
+you pay for that by breaking normal sending. If you do turn it on, set
+`keepalive_timeout` longer than your longest sensation.
+
+### Shutting down
+
+Call `close()` when you are done. It stops any sustains, sends
+`{gameId}*GAMEUNAVAILABLE` to every app that has answered you so the app stops
+listing your game as present, and closes the socket. `notify_unavailable()` is public
+if you need to send that on its own.
 
 ## 2. Building sensations
 
@@ -204,14 +222,20 @@ you need those, read them from the OWO app itself.
 - `send`/`sustain` never raise on a dead connection; they return `False` / no-op and
   recover on reconnect. Wrap your own file and parse calls (`load_owoauth`, reading
   `.owo`) in try/except for bad input.
-- Discovery/keepalive failures are logged through the `owo` logger, not raised. Enable
-  them with `logging.getLogger("owo").setLevel(logging.DEBUG)`.
+- Discovery and network failures are logged through the `owo` logger, not raised.
+  Enable them with `logging.getLogger("owo").setLevel(logging.DEBUG)`.
+- The receive and scan threads survive their own errors and restart each other, so a
+  transient socket error cannot leave the client permanently deaf. On Windows in
+  particular, pinging the broadcast address makes `recvfrom` raise
+  `ConnectionResetError` whenever some host has nothing listening on 54020; that is
+  normal and is ignored.
 
 ## 10. Quick reference
 
 Connection: `OWOClient(game_id, registered_sensations, port, scan_interval,
 auto_reconnect, keepalive, keepalive_timeout)`, `open`, `auto_connect`, `connect`,
-`disconnect`, `close`, `is_connected`, `state`, `connected_servers`, `discovered_apps`.
+`disconnect`, `notify_unavailable`, `close`, `is_connected`, `state`,
+`connected_servers`, `discovered_apps`.
 
 Output: `send(sensation, *muscles, priority, force)`, `stop`, `sustain(sensation,
 *muscles, priority, lead_s) -> SustainedPlayback`.

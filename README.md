@@ -60,8 +60,7 @@ handle.stop()
 
 ## What it does
 
-- Discovery and the full `ping` / `okay` / `pong` handshake, with keepalive and
-  automatic reconnect.
+- Discovery and the full `ping` / `okay` / `pong` handshake, with automatic reconnect.
 - Build sensations in code (`sensation(...)`), target any of the 10 muscles, compose
   sequences, ramp, and scale intensity.
 - Read and write OWO `.owo` pattern files (`parse` / `serialize`), byte-compatible

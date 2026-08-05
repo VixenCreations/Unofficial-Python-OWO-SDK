@@ -434,7 +434,7 @@ class OWOClient:
 
     def __init__(self, game_id="0", registered_sensations=None,
                  port=DEFAULT_PORT, scan_interval=0.5, auto_reconnect=True,
-                 keepalive=True, keepalive_timeout=3.0):
+                 keepalive=False, keepalive_timeout=3.0):
         self.game_id = str(game_id)
         self.auth_payload = build_game_auth(registered_sensations or [])
         self.port = int(port)
@@ -454,7 +454,6 @@ class OWOClient:
         self._running = False
         self._recv_thread = None
         self._scan_thread = None
-        self._last_ping = 0.0
         self._sustains = set()
 
         self._last_priority = -1
@@ -487,8 +486,30 @@ class OWOClient:
         self._recv_thread.start()
         _log.info("OWO socket open on ephemeral port; target port %d", self.port)
 
+    def notify_unavailable(self):
+        """Tell every app that has answered us that this game is going away.
+
+        The official client does this from NotifyAbscense, sending
+        `{gameId}*GAMEUNAVAILABLE` to each app it has heard from. Without it the
+        OWO app can keep listing your game as present after you exit. close()
+        calls this for you.
+        """
+        sent = 0
+        with self._lock:
+            targets = sorted(self._discovered | self._connected)
+        for ip in targets:
+            self._send_raw(f"{self.game_id}*GAMEUNAVAILABLE", ip)
+            sent += 1
+        if sent:
+            _log.info("OWO GAMEUNAVAILABLE sent to %d app(s)", sent)
+        return sent
+
     def close(self):
         self._stop_sustains()
+        try:
+            self.notify_unavailable()
+        except Exception as exc:
+            _log.debug("OWO GAMEUNAVAILABLE on close failed: %s", exc)
         self._running = False
         with self._lock:
             self.state = DISCONNECTED
@@ -601,14 +622,46 @@ class OWOClient:
 
     def _scan_loop(self):
         while self._running:
-            if self.state == CONNECTING or (self.auto_reconnect and not self.is_connected):
-                for target in list(self._targets):
-                    self._send_raw("ping", target)
-            if self.keepalive and self._connected:
-                self._keepalive_tick()
+            try:
+                self._ensure_recv()
+                if self.state == CONNECTING or (self.auto_reconnect and not self.is_connected):
+                    for target in list(self._targets):
+                        self._send_raw("ping", target)
+                if self.keepalive and self._connected:
+                    self._keepalive_tick()
+            except Exception as exc:
+                _log.error("OWO scan loop error, continuing: %s", exc)
             time.sleep(self.scan_interval)
 
+    def _ensure_recv(self):
+        """Restart the receive thread if it has stopped.
+
+        Nothing should kill it, but if anything ever does, the client would go
+        deaf for the life of the process: no `okay`, no `pong`, no `OWO_Close`.
+        Checking here costs nothing and recovers within one scan_interval.
+        """
+        if not self._running or self._sock is None:
+            return
+        thread = self._recv_thread
+        if thread is not None and thread.is_alive():
+            return
+        _log.warning("OWO receive thread was not running; restarting it")
+        self._recv_thread = threading.Thread(target=self._recv_loop, daemon=True,
+                                              name="OWO-Recv")
+        self._recv_thread.start()
+
     def _keepalive_tick(self):
+        """Ping connected apps and drop any that go silent. OFF by default.
+
+        This is NOT part of the OWO protocol. The official client never pings a
+        connected server and never drops one for silence: it waits for an
+        explicit `OWO_Close`. Enabling this costs you sends, because the app
+        stops answering discovery pings while a sensation is in flight, so the
+        connection gets torn down a few seconds after every send and every later
+        send then fails the is_connected check. Turn it on only if you need to
+        notice an app that dies WITHOUT sending `OWO_Close`, and expect false
+        drops while sensations play.
+        """
         now = time.monotonic()
         for ip in self.connected_servers:
             self._send_raw("ping", ip)
@@ -629,10 +682,28 @@ class OWOClient:
                 data, addr = self._sock.recvfrom(RECV_BUFFER)
             except socket.timeout:
                 continue
-            except OSError:
-                break
-            message = data.decode("ascii", errors="ignore").strip()
-            self._handle_message(message, addr[0])
+            except ConnectionResetError:
+                # Windows raises this on a UDP socket after a sendto provokes an
+                # ICMP Port Unreachable, which happens whenever we ping the
+                # broadcast address and some host has nothing on 54020, or when
+                # the OWO app closes. It is routine, not fatal. Breaking here
+                # used to kill this thread for the life of the process.
+                continue
+            except OSError as exc:
+                if not self._running or self._sock is None:
+                    break
+                _log.debug("OWO receive error, continuing: %s", exc)
+                time.sleep(0.05)
+                continue
+            except Exception as exc:
+                _log.error("OWO receive loop error, continuing: %s", exc)
+                time.sleep(0.05)
+                continue
+            try:
+                message = data.decode("ascii", errors="ignore").strip()
+                self._handle_message(message, addr[0])
+            except Exception as exc:
+                _log.error("OWO message handling failed: %s", exc)
 
     def _handle_message(self, message, sender_ip):
         if not message:
@@ -647,6 +718,13 @@ class OWOClient:
                 self._send_raw(f"{self.game_id}*AUTH*{self.auth_payload}", sender_ip)
                 _log.debug("OWO app available at %s; AUTH sent", sender_ip)
         elif message == "pong":
+            # The official client (IsConnectionVerification) only accepts a pong
+            # from an address it is targeting, unless it is broadcasting.
+            with self._lock:
+                targets = list(self._targets)
+            if sender_ip not in targets and BROADCAST not in targets:
+                _log.debug("OWO ignoring pong from untargeted %s", sender_ip)
+                return
             with self._lock:
                 self._connected.add(sender_ip)
                 self.state = CONNECTED

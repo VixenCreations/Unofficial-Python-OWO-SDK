@@ -98,7 +98,38 @@ recv "pong"   from APP_IP   -> state = Connected, remember APP_IP
 send "{id}*SENSATION*..."   to each connected APP_IP
 send "{id}*STOP"            to each connected APP_IP
 recv "OWO_Close"            -> drop APP_IP, resume discovery
+send "{id}*GAMEUNAVAILABLE" to each known APP_IP on shutdown
 ```
+
+### There is no keepalive, and do not invent one
+
+Nothing in the official client pings a server it is already connected to.
+`FindServer.Execute` pings only while it is still looking, and its loop exits as
+soon as every target is connected. From then on the only inbound message that
+means anything is `OWO_Close`.
+
+This matters because the app **stops answering discovery pings while a sensation
+is playing**. Observed directly: an app that had been answering steadily for four
+minutes went silent within a fraction of a second of receiving a `SENSATION`, and
+stayed silent for the next four and a half minutes, yet it was still alive and
+still sent a proper `OWO_Close` when it was finally closed.
+
+So a liveness check built on ping silence will fire a few seconds after every
+send and tear down a working connection. If your client then gates sending on
+"am I connected", the first sensation you send is also the last one that works.
+`owo.py` ships `keepalive=False` for this reason. The trade you accept is that an
+app which dies without sending `OWO_Close` goes unnoticed, which is exactly what
+the official client accepts too.
+
+### Windows: ICMP kills a naive receive loop
+
+Broadcasting `ping` reaches hosts with nothing bound to 54020, and each one
+answers with an ICMP Port Unreachable. On Windows that makes the **next**
+`recvfrom` on the UDP socket raise `ConnectionResetError` (`WSAECONNRESET`,
+WinError 10054), even though the socket is fine. A receive loop that treats any
+`OSError` as fatal will exit on the first one and the client goes deaf for the
+life of the process: no `okay`, no `pong`, no `OWO_Close`, and no way back.
+Catch `ConnectionResetError` and carry on.
 
 ## 5. Sensation serialization
 
