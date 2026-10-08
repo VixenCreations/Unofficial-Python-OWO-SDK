@@ -1,3 +1,4 @@
+[![CodeQL](https://github.com/VixenCreations/Unofficial-Python-OWO-SDK/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/VixenCreations/Unofficial-Python-OWO-SDK/actions/workflows/github-code-scanning/codeql)
 # Unofficial Python OWO SDK
 
 > **AI assistance notice:** this SDK was developed with the assistance of
