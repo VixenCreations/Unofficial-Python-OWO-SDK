@@ -609,7 +609,7 @@ class OWOClient:
         if self._sock is None:
             return
         try:
-            self._sock.sendto(message.encode("ascii"), (ip, self.port))
+            self._sock.sendto(message.encode("ascii", errors="replace"), (ip, self.port))
         except OSError as exc:
             _log.debug("OWO send to %s failed: %s", ip, exc)
 
